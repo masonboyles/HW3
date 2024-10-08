@@ -1,6 +1,6 @@
 ---
 title: "HW 3"
-author: "Student Name"
+author: "Mason Boyles"
 date: "9/24/2024"
 output: 
   html_document:
@@ -11,7 +11,15 @@ output:
 
 Let $E[X] = \mu$.  Show that $Var[X] := E[(X-E[X])^2] = E[X^2]-(E[X])^2$.  Note, all you have to do is show the second equality (the first is our definition from class). 
 
+Distribute: E[(X-E[X])^2] = E(X^2 - 2XE[X] + (E[X])^2)
 
+Expected Values: = E[X^2] - 2E[XE[X]] + E[(E[X])^2]
+
+Considering E[X] as constant: = E[X^2] - 2E[X] * E[X] + (E[X])^2 * E[1]
+
+Combining Terms: = E[X^2] - 2(E[X])^2 + (E[X])^2 
+
+Combining terms: = E[X^2] - (E[X])^2
 
 # 
 
@@ -26,7 +34,6 @@ x[101:150,]=x[101:150,]-2
 y=c(rep(1,150),rep(2,50))
 dat=data.frame(x=x,y=as.factor(y))
 plot(x, col=y)
-
 ```
 
 
@@ -36,6 +43,11 @@ Quite clearly, the above data is not linearly separable.  Create a training-test
 
 ```{r}
 set.seed(1)
+train = sample(1:nrow(dat), 100)
+train_data = dat[train,]
+
+svmfit = svm(y~., data = train_data, kernel = "radial", gamma = 1, cost = 1, scale = FALSE)
+plot(svmfit, train_data)
 
 ```
 
@@ -45,6 +57,8 @@ Notice that the above decision boundary is decidedly non-linear.  It seems to pe
 
 ```{r}
 
+svmfit2 = svm(y~., data = train_data, kernel = "radial", gamma = 1, cost = 10000, scale = FALSE)
+plot(svmfit2, train_data)
 
 ```
 
@@ -52,28 +66,27 @@ Notice that the above decision boundary is decidedly non-linear.  It seems to pe
 
 It would appear that we are better capturing the training data, but comment on the dangers (if any exist), of such a model. 
 
-*Student Answer*
+I would be afraid of overfitting in this case. It seems that the circle got split into two which may work to fit the training data well, but I fear it may not be the best at generalizing.
 
 ##
 
 Create a confusion matrix by using this svm to predict on the current testing partition.  Comment on the confusion matrix.  Is there any disparity in our classification results?    
 
-```{r, eval = FALSE}
+```{r}
 #remove eval = FALSE in above
-table(true=dat[-train,"y"], pred=predict(svmfit, newdata=dat[-train,]))
+table(true=dat[-train,"y"], pred=predict(svmfit2, newdata=dat[-train,]))
 ```
-
+It seems to have a relatively high number of situations where we predicted it to be a 2 but it was actually a 1. This is likely due to overfitting.
 
 ##
 
 Is this disparity because of imbalance in the training/testing partition?  Find the proportion of class `2` in your training partition and see if it is broadly representative of the underlying 25\% of class 2 in the data as a whole.  
 
 ```{r}
-
-
+sum(dat[-train,][,3] == 2) / nrow(dat[-train,])
 ```
 
-*Student Response*
+No, .21 is broadly representative of the underlying 25% in the data as a whole.
 
 ##
 
@@ -83,13 +96,16 @@ Let's try and balance the above to solutions via cross-validation.  Using the `t
 
 set.seed(1)
 
+tune.out = tune(svm, y~., data = train_data, kernal = "radial", ranges = list(cost = c(0.1, 1, 10, 100, 1000), gamma = c(0.5, 1, 2, 3, 4)))
+tune.out
+
 
 ```
 
 I will take `tune.out` and use the best model according to error rate to test on our data.  I will report a confusion matrix corresponding to the 100 predictions.  
 
 
-```{r, eval = FALSE}
+```{r}
 table(true=dat[-train,"y"], pred=predict(tune.out$best.model, newdata=dat[-train,]))
 ```
 
@@ -97,7 +113,7 @@ table(true=dat[-train,"y"], pred=predict(tune.out$best.model, newdata=dat[-train
 
 Comment on the confusion matrix.  How have we improved upon the model in question 2 and what qualifications are still necessary for this improved model.  
 
-*Student Response*
+This improved performance significantly. We now have 2 less instances where we incorrectly classified a two as a one and 10 less instances where we incorrectly classified a one as a two. However, there still are significantly more instances where we are misclassifying ones as twos vs the other way around.
 
 # 
 Let's turn now to decision trees.  
@@ -115,7 +131,9 @@ library(tree)
 The response variable is currently a categorical variable with four levels.  Convert heart disease into binary categorical variable.  Then, ensure that it is properly stored as a factor. 
 
 ```{r}
-
+heart$heart_disease = ifelse(heart$class == 0, 0, 1)
+heart$heart_disease = as.factor(heart$heart_disease)
+head(heart)
 
 ```
 
@@ -126,6 +144,12 @@ Train a classification tree on a 240 observation training subset (using the seed
 ```{r}
 set.seed(101)
 
+train=sample(1:nrow(heart), 240)
+
+tree.heart = tree(heart_disease~. -class, heart, subset = train)
+plot(tree.heart)
+text(tree.heart, pretty = 0)
+
 ```
 
 
@@ -134,7 +158,11 @@ set.seed(101)
 Use the trained model to classify the remaining testing points.  Create a confusion matrix to evaluate performance.  Report the classification error rate.  
 
 ```{r}
+tree.pred = predict(tree.heart, heart[-train,], type="class")
+with(heart[-train,], table(tree.pred, heart_disease))
 
+classification_error_rate = (3+8)/ (28+3+8+18)
+classification_error_rate
 
 ```
 
@@ -144,7 +172,17 @@ Above we have a fully grown (bushy) tree.  Now, cross validate it using the `cv.
 
 ```{r}
 set.seed(101)
+cv.heart = cv.tree(tree.heart , FUN = prune.misclass)
+cv.heart
+plot(cv.heart$size, cv.heart$dev, type = "b")
+prune.heart = prune.misclass(tree.heart, best = 2) #Choose 2 because it is simpler than 4 even though both have the same dev value
+plot(prune.heart)
+text(prune.heart, pretty=0)
 
+prune.pred = predict(prune.heart, heart[-train,], type="class")
+with(heart[-train,], table(prune.pred, heart_disease))
+classification_error_rate_pruned = ((9+8) / (9+8+28+12))
+classification_error_rate_pruned
 ```
 
 
@@ -152,10 +190,10 @@ set.seed(101)
 
 Discuss the trade-off in accuracy and interpretability in pruning the above tree. 
 
-*Student Input *
+The pruned tree is far simpler, since there is only one decision that needs to be made. However, the performance is significantly worse in this training testing split as misclassification rate rose from ~.193 to ~.298
 
 ## 
 
 Discuss the ways a decision tree could manifest algorithmic bias.  
 
-*Student Answer*
+One way that a decision tree can manifest algorithmic bias can be over-fitting caused by using a fully grown tree without pruning, this can cause it to not generalize well to data once it isn't exactly the same. Another way that is less specific to decision trees, but still applies is when you have unrepresentative training and testing data, they should have similar distributions of classes.
